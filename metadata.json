@@ -1,0 +1,6 @@
+{
+  "name": "LaporCabang",
+  "description": "Sistem pelaporan operasional antar cabang untuk Admin dan Leader dengan integrasi Google Apps Script.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
