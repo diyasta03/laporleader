@@ -1,16 +1,20 @@
 @import "tailwindcss";
+@custom-variant hover (&:hover);
 
 @theme {
   --font-display: "Plus Jakarta Sans", system-ui, -apple-system, sans-serif;
   --font-sans: "Public Sans", system-ui, -apple-system, sans-serif;
   --font-mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, monospace;
+  --color-wm-primary: #033367;
+  --color-wm-deep: #0a172e;
+  --color-wm-white: #ffffff;
 }
 
 @layer base {
   html {
     font-family: var(--font-sans);
-    color: #0f172a;
-    background-color: #f8fafc;
+    color: #0a172e;
+    background-color: #f7f9fc;
   }
 
   h1,

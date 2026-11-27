@@ -6,6 +6,13 @@ export function formatNumber(value: number): string {
   return numberFormatter.format(Number.isFinite(value) ? value : 0);
 }
 
+export function formatFileSize(bytes: number): string {
+  if (!Number.isFinite(bytes) || bytes <= 0) return '0 B';
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1).replace('.', ',')} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(2).replace('.', ',')} MB`;
+}
+
 export function formatDateId(dateStr: string): string {
   if (!dateStr) return '-';
   const parts = dateStr.split('-');
@@ -16,6 +23,18 @@ export function formatDateId(dateStr: string): string {
     day: '2-digit',
     month: 'short',
     year: 'numeric',
+  }).format(date);
+}
+
+export function formatShortDateId(dateStr: string): string {
+  if (!dateStr) return '-';
+  const parts = dateStr.split('-');
+  if (parts.length !== 3) return dateStr;
+  const date = new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2]));
+  if (Number.isNaN(date.getTime())) return dateStr;
+  return new Intl.DateTimeFormat('id-ID', {
+    day: '2-digit',
+    month: 'short',
   }).format(date);
 }
 
@@ -32,18 +51,16 @@ export function formatDateTimeId(isoStr: string): string {
   }).format(date);
 }
 
+export function formatTimeRange(startTime: string, endTime: string): string {
+  if (!startTime && !endTime) return '-';
+  if (startTime && endTime) return `${startTime} – ${endTime}`;
+  return startTime || endTime;
+}
+
 export function getStatusTextClass(status: ReportStatus): string {
-  switch (status) {
-    case 'Selesai':
-      return 'text-emerald-700 font-medium';
-    case 'Ditinjau':
-      return 'text-amber-700 font-medium';
-    case 'Perlu Revisi':
-      return 'text-rose-700 font-medium';
-    case 'Terkirim':
-    default:
-      return 'text-slate-600 font-medium';
-  }
+  return status === 'Reviewed'
+    ? 'text-[#033367] font-semibold'
+    : 'text-amber-700 font-medium';
 }
 
 export function getTodayIsoDate(): string {
@@ -54,9 +71,25 @@ export function getTodayIsoDate(): string {
   return `${year}-${month}-${day}`;
 }
 
+/**
+ * Mengidentifikasi apakah kolom Kendala melaporkan hambatan nyata
+ * (karena kolom Kendala wajib diisi, pelapor sering menulis "Tidak ada kendala" / "Nihil").
+ */
+export function hasReportedIssue(issues: string): boolean {
+  const normalized = issues.trim().toLowerCase().replace(/[.,!]/g, '');
+  if (!normalized || normalized === '-') return false;
+  if (
+    /^(tidak ada( kendala| hambatan| masalah)?|nihil|belum ada( kendala)?|none|aman|lancar|tanpa kendala)$/i.test(
+      normalized
+    )
+  ) {
+    return false;
+  }
+  return true;
+}
+
 function escapeCsvCell(value: unknown): string {
   let str = String(value ?? '');
-  // Cegah formula injection saat dibuka di Excel / Google Sheets
   if (/^[=+\-@\t\r]/.test(str)) {
     str = `'${str}`;
   }
@@ -68,31 +101,41 @@ export function downloadReportsCsv(reports: BranchReport[], filename: string): v
   const headers = [
     'ID Laporan',
     'Tanggal',
+    'Jam Mulai',
+    'Jam Selesai',
     'Kode Cabang',
     'Nama Cabang',
-    'Judul Kegiatan',
-    'Kategori',
-    'Shift',
-    'Staf Hadir',
-    'Status',
-    'Pelapor',
+    'Kategori Kegiatan',
+    'Nama Kegiatan',
+    'Judul Sharing Session',
+    'Lampiran PDF',
     'Uraian Kegiatan',
+    'Capaian',
     'Kendala',
+    'Tindak Lanjut',
+    'Status',
+    'Catatan Review',
+    'Pelapor',
   ];
 
   const rows = reports.map((r) => [
     r.id,
     r.reportDate,
+    r.startTime,
+    r.endTime,
     r.branchCode,
     r.branchName,
-    r.title,
     r.category,
-    r.shift,
-    r.staffPresent,
-    r.status,
-    r.createdByName,
-    r.summary,
+    r.activityName,
+    r.sharingSessionTitle,
+    r.hasAttachment ? r.attachmentName : '',
+    r.description,
+    r.achievements,
     r.issues,
+    r.followUp,
+    r.status,
+    r.reviewNote,
+    r.createdByName,
   ]);
 
   const csvContent =

@@ -1,6 +1,6 @@
 /**
- * LaporCabang — Backend Google Apps Script (Google Sheets)
- * ========================================================
+ * WM Center — Backend Google Apps Script (Google Sheets)
+ * ======================================================
  * Cara Pemasangan:
  * 1. Buka Google Sheets baru, lalu klik Ekstensi -> Apps Script.
  * 2. Hapus kode bawaan dan tempel seluruh kode ini ke file Code.gs.
@@ -10,33 +10,32 @@
  * 5. Klik Deploy -> New deployment -> Web app:
  *    - Execute as: Me
  *    - Who has access: Anyone
- * 6. Salin URL Web App (`https://script.google.com/macros/s/.../exec`) ke halaman Integrasi Apps Script.
+ * 6. Salin URL Web App (`https://script.google.com/macros/s/.../exec`) ke menu Integrasi Apps Script.
  */
 
 var SHEET_BRANCHES = 'Branches';
 var SHEET_USERS = 'Users';
 var SHEET_REPORTS = 'Reports';
+var ADMIN_EMAIL_DOMAIN = '@wmcenter.id';
 var SESSION_TTL_SECONDS = 21600; // 6 jam
 
 var ALLOWED_CATEGORIES = [
-  'Operasional Harian',
-  'Pelayanan & Lapangan',
-  'Stok & Logistik',
-  'SDM & Kehadiran',
+  'Operasional & Layanan Fisioterapi',
+  'Sharing Session',
+  'WM Class & Program Wellness',
+  'Briefing & Evaluasi Tim',
+  'Event & Aktivasi Komunitas',
+  'Perawatan Alat & Fasilitas',
   'Kendala & Insiden',
 ];
 
-var ALLOWED_SHIFTS = ['Pagi', 'Siang', 'Malam', 'Penuh'];
+var ALLOWED_STATUSES = ['Under Review', 'Reviewed'];
 
-var ALLOWED_STATUSES = [
-  'Terkirim',
-  'Ditinjau',
-  'Selesai',
-  'Perlu Revisi',
-];
+var DRIVE_ATTACHMENT_FOLDER = 'WM Center - Lampiran Sharing Session';
+var MAX_PDF_BYTES = 5 * 1024 * 1024; // 5 MB
 
 /**
- * Jalankan fungsi ini sekali dari editor Apps Script untuk membuat struktur sheet.
+ * Jalankan fungsi ini sekali dari editor Apps Script untuk membuat struktur sheet WM Center.
  */
 function setupSpreadsheet() {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
@@ -44,40 +43,54 @@ function setupSpreadsheet() {
   ensureSheet_(ss, SHEET_BRANCHES, ['id', 'code', 'name', 'city', 'address']);
   ensureSheet_(ss, SHEET_USERS, [
     'id',
-    'username',
+    'identifier',
     'fullName',
     'role',
     'branchId',
-    'passwordSalt',
-    'passwordHash',
+    'secretSalt',
+    'secretHash',
     'createdAt',
   ]);
   ensureSheet_(ss, SHEET_REPORTS, [
     'id',
     'reportDate',
+    'startTime',
+    'endTime',
     'branchId',
-    'title',
     'category',
-    'shift',
-    'staffPresent',
-    'summary',
+    'activityName',
+    'sharingSessionTitle',
+    'description',
+    'achievements',
     'issues',
+    'followUp',
     'status',
+    'reviewNote',
     'createdById',
     'createdByName',
     'createdByRole',
     'createdAt',
     'updatedAt',
+    'attachmentFileId',
+    'attachmentName',
+    'attachmentSize',
   ]);
 
   var branchSheet = ss.getSheetByName(SHEET_BRANCHES);
   if (branchSheet.getLastRow() <= 1) {
     var defaultBranches = [
-      ['cab-jkt', 'JKT-01', 'Cabang Jakarta Pusat', 'Jakarta Pusat', 'Jl. Jend. Sudirman Kav. 21'],
-      ['cab-bdg', 'BDG-02', 'Cabang Bandung', 'Bandung', 'Jl. Asia Afrika No. 88'],
-      ['cab-sby', 'SBY-03', 'Cabang Surabaya', 'Surabaya', 'Jl. Basuki Rahmat No. 45'],
-      ['cab-mdn', 'MDN-04', 'Cabang Medan', 'Medan', 'Jl. Gatot Subroto No. 112'],
-      ['cab-mks', 'MKS-05', 'Cabang Makassar', 'Makassar', 'Jl. Pettarani No. 34'],
+      ['wm-snt', 'WM-SNT', 'WM Center Sunter', 'Jakarta Utara', 'Kawasan Sunter Agung, Jakarta Utara'],
+      ['wm-pmd', 'WM-PMD', 'WM Center Pemuda', 'Jakarta Timur', 'Jl. Pemuda, Rawamangun, Jakarta Timur'],
+      ['wm-kby', 'WM-KBY', 'WM Center Kebayoran', 'Jakarta Selatan', 'Kebayoran Baru, Jakarta Selatan'],
+      ['wm-kmg', 'WM-KMG', 'WM Center Kemang', 'Jakarta Selatan', 'Kawasan Kemang, Jakarta Selatan'],
+      ['wm-kng', 'WM-KNG', 'WM Center Kuningan', 'Jakarta Selatan', 'Kuningan, Jakarta Selatan'],
+      ['wm-pri', 'WM-PRI', 'WM Center Puri', 'Jakarta Barat', 'Puri Indah, Jakarta Barat'],
+      ['wm-als', 'WM-ALS', 'WM Center Alam Sutera', 'Tangerang', 'Kawasan Alam Sutera, Tangerang'],
+      ['wm-bsd', 'WM-BSD', 'WM Center BSD', 'Tangerang Selatan', 'BSD City, Tangerang Selatan'],
+      ['wm-bks', 'WM-BKS', 'WM Center Bekasi', 'Bekasi', 'Bekasi Barat, Kota Bekasi'],
+      ['wm-dpk', 'WM-DPK', 'WM Center Depok', 'Depok', 'Margonda, Kota Depok'],
+      ['wm-bdg', 'WM-BDG', 'WM Center Bandung', 'Bandung', 'Kota Bandung, Jawa Barat'],
+      ['wm-sby', 'WM-SBY', 'WM Center Surabaya', 'Surabaya', 'Kota Surabaya, Jawa Timur'],
     ];
     branchSheet.getRange(2, 1, defaultBranches.length, 5).setValues(defaultBranches);
   }
@@ -90,8 +103,56 @@ function ensureSheet_(ss, name, headers) {
   }
   if (sheet.getLastRow() === 0) {
     sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
-    sheet.getRange(1, 1, 1, headers.length).setFontWeight('bold').setBackground('#f1f5f9');
+    sheet
+      .getRange(1, 1, 1, headers.length)
+      .setFontWeight('bold')
+      .setBackground('#033367')
+      .setFontColor('#ffffff');
     sheet.setFrozenRows(1);
+    return sheet;
+  }
+
+  // Migrasi otomatis header Users lama (email/passwordSalt/passwordHash -> identifier/secretSalt/secretHash)
+  if (name === SHEET_USERS) {
+    var userHeaders = sheet.getRange(1, 1, 1, Math.max(sheet.getLastColumn(), headers.length)).getValues()[0];
+    if (String(userHeaders[1]) === 'email' || String(userHeaders[5]) === 'passwordSalt') {
+      sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
+      sheet
+        .getRange(1, 1, 1, headers.length)
+        .setFontWeight('bold')
+        .setBackground('#033367')
+        .setFontColor('#ffffff');
+    }
+    return sheet;
+  }
+
+  // Jika sheet Reports masih memakai struktur kolom lama (sebelum WM Center), arsipkan agar tidak salah kolom
+  if (name === SHEET_REPORTS) {
+    var reportHeaders = sheet.getRange(1, 1, 1, Math.max(sheet.getLastColumn(), 4)).getValues()[0];
+    if (String(reportHeaders[2]) !== 'startTime' || String(reportHeaders[6]) !== 'activityName') {
+      var stamp = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyyMMdd_HHmm');
+      sheet.setName('Reports_Lama_' + stamp);
+      var fresh = ss.insertSheet(SHEET_REPORTS);
+      fresh.getRange(1, 1, 1, headers.length).setValues([headers]);
+      fresh
+        .getRange(1, 1, 1, headers.length)
+        .setFontWeight('bold')
+        .setBackground('#033367')
+        .setFontColor('#ffffff');
+      fresh.setFrozenRows(1);
+      return fresh;
+    }
+  }
+
+  var existingCols = sheet.getLastColumn();
+  if (existingCols < headers.length) {
+    var missingHeaders = headers.slice(existingCols);
+    sheet.getRange(1, existingCols + 1, 1, missingHeaders.length).setValues([missingHeaders]);
+    sheet
+      .getRange(1, existingCols + 1, 1, missingHeaders.length)
+      .setFontWeight('bold')
+      .setBackground('#033367')
+      .setFontColor('#ffffff');
   }
   return sheet;
 }
@@ -110,7 +171,7 @@ function doGet(e) {
 
     return jsonResponse_({
       ok: true,
-      service: 'LaporCabang Apps Script',
+      service: 'WM Center Reporting Apps Script',
       spreadsheetName: ss.getName(),
       initialized: hasSheets,
       timestamp: new Date().toISOString(),
@@ -120,7 +181,7 @@ function doGet(e) {
 }
 
 /**
- * Router utama untuk seluruh operasi autentikasi & CRUD laporan antar cabang.
+ * Router utama untuk seluruh operasi autentikasi & CRUD laporan WM Center.
  */
 function doPost(e) {
   try {
@@ -140,50 +201,43 @@ function doPost(e) {
 
     switch (action) {
       case 'ping':
-        return jsonResponse_({ ok: true, service: 'LaporCabang Apps Script' });
-
+        return jsonResponse_({ ok: true, service: 'WM Center Reporting Apps Script' });
       case 'authStatus':
         return handleAuthStatus_();
-
       case 'bootstrapAdmin':
         return handleBootstrapAdmin_(payload);
-
       case 'login':
         return handleLogin_(payload);
-
       case 'logout':
         return handleLogout_(token);
-
       case 'me':
         return handleMe_(token);
-
       case 'listBranches':
         return handleListBranches_(token);
-
       case 'createBranch':
         return handleCreateBranch_(token, payload);
-
+      case 'updateBranch':
+        return handleUpdateBranch_(token, payload);
+      case 'deleteBranch':
+        return handleDeleteBranch_(token, payload);
       case 'listReports':
         return handleListReports_(token, payload);
-
       case 'createReport':
         return handleCreateReport_(token, payload);
-
       case 'updateReport':
         return handleUpdateReport_(token, payload);
-
+      case 'updateReportStatus':
+        return handleUpdateReportStatus_(token, payload);
       case 'deleteReport':
         return handleDeleteReport_(token, payload);
-
+      case 'getAttachment':
+        return handleGetAttachment_(token, payload);
       case 'listUsers':
         return handleListUsers_(token);
-
       case 'createUser':
         return handleCreateUser_(token, payload);
-
       case 'deleteUser':
         return handleDeleteUser_(token, payload);
-
       default:
         return jsonResponse_({ ok: false, error: 'Aksi tidak dikenal: ' + action });
     }
@@ -197,10 +251,22 @@ function doPost(e) {
 
 /* ==================== AUTENTIKASI & SESI ==================== */
 
+function getUserIdentifier_(u) {
+  return String(u.identifier !== undefined && u.identifier !== '' ? u.identifier : u.email || '').trim();
+}
+
+function getUserSalt_(u) {
+  return String(u.secretSalt !== undefined && u.secretSalt !== '' ? u.secretSalt : u.passwordSalt || '');
+}
+
+function getUserHash_(u) {
+  return String(u.secretHash !== undefined && u.secretHash !== '' ? u.secretHash : u.passwordHash || '');
+}
+
 function handleAuthStatus_() {
   var users = readObjects_(SHEET_USERS);
   var hasAdmin = users.some(function (u) {
-    return u.role === 'admin';
+    return u.role === 'admin' && isValidWmAdminEmail_(normalizeEmail_(getUserIdentifier_(u)));
   });
   return jsonResponse_({ ok: true, data: { needsSetup: !hasAdmin } });
 }
@@ -211,18 +277,21 @@ function handleBootstrapAdmin_(payload) {
   try {
     var users = readObjects_(SHEET_USERS);
     var hasAdmin = users.some(function (u) {
-      return u.role === 'admin';
+      return u.role === 'admin' && isValidWmAdminEmail_(normalizeEmail_(getUserIdentifier_(u)));
     });
     if (hasAdmin) {
-      return jsonResponse_({ ok: false, error: 'Akun Admin sudah pernah diaktifkan.' });
+      return jsonResponse_({ ok: false, error: 'Akun Admin WM Center sudah pernah diaktifkan.' });
     }
 
-    var username = normalizeUsername_(payload.username);
+    var email = normalizeEmail_(payload.email);
     var fullName = String(payload.fullName || '').trim();
     var password = String(payload.password || '');
 
-    if (!username || username.length < 3) {
-      return jsonResponse_({ ok: false, error: 'Username minimal 3 karakter.' });
+    if (!isValidWmAdminEmail_(email)) {
+      return jsonResponse_({
+        ok: false,
+        error: 'Email Admin wajib menggunakan domain ' + ADMIN_EMAIL_DOMAIN + '.',
+      });
     }
     if (!fullName) {
       return jsonResponse_({ ok: false, error: 'Nama lengkap wajib diisi.' });
@@ -232,26 +301,17 @@ function handleBootstrapAdmin_(payload) {
     }
 
     var salt = generateRandomHex_(16);
-    var hash = hashPassword_(password, salt);
+    var hash = hashSecret_(password, salt);
     var now = new Date().toISOString();
     var userId = 'usr-' + Utilities.getUuid().slice(0, 8);
 
     var sheet = getSheetOrThrow_(SHEET_USERS);
-    sheet.appendRow([
-      userId,
-      safeCell_(username),
-      safeCell_(fullName),
-      'admin',
-      '',
-      salt,
-      hash,
-      now,
-    ]);
+    sheet.appendRow([userId, safeCell_(email), safeCell_(fullName), 'admin', '', salt, hash, now]);
 
     var token = createSession_(userId);
     var profile = toUserProfile_({
       id: userId,
-      username: username,
+      identifier: email,
       fullName: fullName,
       role: 'admin',
       branchId: '',
@@ -265,25 +325,50 @@ function handleBootstrapAdmin_(payload) {
 }
 
 function handleLogin_(payload) {
-  var username = normalizeUsername_(payload.username);
-  var password = String(payload.password || '');
+  var loginType = payload.loginType === 'admin' ? 'admin' : 'leader';
+  var rawId = String(payload.identifier || '');
+  var identifier = loginType === 'admin' ? normalizeEmail_(rawId) : normalizeUsername_(rawId);
+  var rawSecret = String(payload.secret || '');
+  var secret = loginType === 'leader' ? rawSecret.trim() : rawSecret;
+
+  if (loginType === 'admin' && !isValidWmAdminEmail_(identifier)) {
+    return jsonResponse_({
+      ok: false,
+      error: 'Login Admin wajib menggunakan email ' + ADMIN_EMAIL_DOMAIN + '.',
+    });
+  }
 
   var users = readObjects_(SHEET_USERS);
   var found = null;
   for (var i = 0; i < users.length; i++) {
-    if (normalizeUsername_(users[i].username) === username) {
+    var rowRole = users[i].role === 'admin' ? 'admin' : 'leader';
+    var rawRowId = getUserIdentifier_(users[i]);
+    var rowId = rowRole === 'admin' ? normalizeEmail_(rawRowId) : normalizeUsername_(rawRowId);
+    if (rowRole === loginType && rowId === identifier) {
       found = users[i];
       break;
     }
   }
 
   if (!found) {
-    return jsonResponse_({ ok: false, error: 'Username atau password tidak sesuai.' });
+    return jsonResponse_({
+      ok: false,
+      error:
+        loginType === 'admin'
+          ? 'Email WM Center atau password tidak sesuai.'
+          : 'Username atau kode akses leader tidak sesuai.',
+    });
   }
 
-  var candidateHash = hashPassword_(password, String(found.passwordSalt || ''));
-  if (!constantTimeEqual_(candidateHash, String(found.passwordHash || ''))) {
-    return jsonResponse_({ ok: false, error: 'Username atau password tidak sesuai.' });
+  var candidateHash = hashSecret_(secret, getUserSalt_(found));
+  if (!constantTimeEqual_(candidateHash, getUserHash_(found))) {
+    return jsonResponse_({
+      ok: false,
+      error:
+        loginType === 'admin'
+          ? 'Email WM Center atau password tidak sesuai.'
+          : 'Username atau kode akses leader tidak sesuai.',
+    });
   }
 
   var token = createSession_(found.id);
@@ -331,12 +416,12 @@ function requireUser_(token) {
 function requireAdmin_(token) {
   var user = requireUser_(token);
   if (user.role !== 'admin') {
-    throw new Error('FORBIDDEN: Hanya Admin yang memiliki akses ke fitur ini.');
+    throw new Error('FORBIDDEN: Hanya Admin WM Center yang memiliki akses ke fitur ini.');
   }
   return user;
 }
 
-/* ==================== CABANG ==================== */
+/* ==================== CABANG (CRUD ADMIN) ==================== */
 
 function handleListBranches_(token) {
   var user = requireUser_(token);
@@ -368,7 +453,7 @@ function handleCreateBranch_(token, payload) {
     return jsonResponse_({ ok: false, error: 'Kode cabang sudah digunakan.' });
   }
 
-  var id = 'cab-' + Utilities.getUuid().slice(0, 8);
+  var id = 'wm-' + Utilities.getUuid().slice(0, 8);
   var sheet = getSheetOrThrow_(SHEET_BRANCHES);
   sheet.appendRow([id, safeCell_(code), safeCell_(name), safeCell_(city), safeCell_(address)]);
 
@@ -378,7 +463,68 @@ function handleCreateBranch_(token, payload) {
   });
 }
 
-/* ==================== LAPORAN (CRUD & OTORISASI CABANG) ==================== */
+function handleUpdateBranch_(token, payload) {
+  requireAdmin_(token);
+  var branchId = String(payload.id || '');
+  var code = String(payload.code || '').trim().toUpperCase();
+  var name = String(payload.name || '').trim();
+  var city = String(payload.city || '').trim();
+  var address = String(payload.address || '').trim();
+
+  if (!branchId || !code || !name || !city) {
+    return jsonResponse_({ ok: false, error: 'Data cabang tidak lengkap.' });
+  }
+
+  var sheet = getSheetOrThrow_(SHEET_BRANCHES);
+  var values = sheet.getDataRange().getValues();
+  for (var i = 1; i < values.length; i++) {
+    if (String(values[i][0]) !== branchId && String(values[i][1]).toUpperCase() === code) {
+      return jsonResponse_({ ok: false, error: 'Kode cabang sudah digunakan cabang lain.' });
+    }
+  }
+
+  for (var r = 1; r < values.length; r++) {
+    if (String(values[r][0]) === branchId) {
+      sheet
+        .getRange(r + 1, 1, 1, 5)
+        .setValues([[branchId, safeCell_(code), safeCell_(name), safeCell_(city), safeCell_(address)]]);
+      return jsonResponse_({
+        ok: true,
+        data: { id: branchId, code: code, name: name, city: city, address: address },
+      });
+    }
+  }
+
+  return jsonResponse_({ ok: false, error: 'Cabang tidak ditemukan.' });
+}
+
+function handleDeleteBranch_(token, payload) {
+  requireAdmin_(token);
+  var branchId = String(payload.id || '');
+  var users = readObjects_(SHEET_USERS);
+  if (
+    users.some(function (u) {
+      return String(u.branchId) === branchId;
+    })
+  ) {
+    return jsonResponse_({
+      ok: false,
+      error: 'Cabang masih memiliki akun Leader terdaftar. Hapus atau pindahkan akun terlebih dahulu.',
+    });
+  }
+
+  var sheet = getSheetOrThrow_(SHEET_BRANCHES);
+  var values = sheet.getDataRange().getValues();
+  for (var r = 1; r < values.length; r++) {
+    if (String(values[r][0]) === branchId) {
+      sheet.deleteRow(r + 1);
+      return jsonResponse_({ ok: true, data: { deletedId: branchId } });
+    }
+  }
+  return jsonResponse_({ ok: false, error: 'Cabang tidak ditemukan.' });
+}
+
+/* ==================== LAPORAN KEGIATAN ==================== */
 
 function handleListReports_(token, filters) {
   var user = requireUser_(token);
@@ -386,11 +532,9 @@ function handleListReports_(token, filters) {
   var rows = readObjects_(SHEET_REPORTS);
 
   var filtered = rows.filter(function (row) {
-    // ATURAN KETAT: Leader hanya dapat melihat laporan dari cabangnya sendiri
     if (user.role === 'leader') {
       return String(row.branchId) === String(user.branchId);
     }
-    // Admin dapat memfilter cabang tertentu atau melihat semua cabang
     if (filters && filters.branchId && filters.branchId !== 'all') {
       return String(row.branchId) === String(filters.branchId);
     }
@@ -402,7 +546,9 @@ function handleListReports_(token, filters) {
   });
 
   mapped.sort(function (a, b) {
-    return String(b.reportDate + b.createdAt).localeCompare(String(a.reportDate + a.createdAt));
+    return String(b.reportDate + b.startTime + b.createdAt).localeCompare(
+      String(a.reportDate + a.startTime + a.createdAt)
+    );
   });
 
   return jsonResponse_({ ok: true, data: mapped });
@@ -412,7 +558,7 @@ function handleCreateReport_(token, payload) {
   var user = requireUser_(token);
   var branchesMap = indexById_(readObjects_(SHEET_BRANCHES));
 
-  // ATURAN KETAT: Leader otomatis terkunci pada cabangnya sendiri
+  // ATURAN KETAT: Leader otomatis terkunci ke cabang penempatannya
   var targetBranchId = user.role === 'leader' ? String(user.branchId) : String(payload.branchId || '');
   if (!targetBranchId || !branchesMap[targetBranchId]) {
     return jsonResponse_({ ok: false, error: 'Cabang tujuan tidak valid.' });
@@ -421,43 +567,62 @@ function handleCreateReport_(token, payload) {
   var validated = validateReportPayload_(payload, user.role);
   var now = new Date().toISOString();
   var dateKey = validated.reportDate.replace(/-/g, '');
-  var id = 'RPT-' + dateKey + '-' + Utilities.getUuid().slice(0, 4).toUpperCase();
+  var id = 'WM-' + dateKey + '-' + Utilities.getUuid().slice(0, 4).toUpperCase();
+
+  var savedFile = { fileId: '', fileName: '', fileSize: 0 };
+  if (payload.attachment && validated.category === 'Sharing Session') {
+    savedFile = savePdfAttachmentToDrive_(id, payload.attachment);
+  }
 
   var rowObj = {
     id: id,
     reportDate: validated.reportDate,
+    startTime: validated.startTime,
+    endTime: validated.endTime,
     branchId: targetBranchId,
-    title: validated.title,
     category: validated.category,
-    shift: validated.shift,
-    staffPresent: validated.staffPresent,
-    summary: validated.summary,
+    activityName: validated.activityName,
+    sharingSessionTitle: validated.sharingSessionTitle,
+    description: validated.description,
+    achievements: validated.achievements,
     issues: validated.issues,
+    followUp: validated.followUp,
     status: validated.status,
+    reviewNote: validated.reviewNote,
     createdById: user.id,
     createdByName: user.fullName,
     createdByRole: user.role,
     createdAt: now,
     updatedAt: now,
+    attachmentFileId: savedFile.fileId,
+    attachmentName: savedFile.fileName,
+    attachmentSize: savedFile.fileSize,
   };
 
   var sheet = getSheetOrThrow_(SHEET_REPORTS);
   sheet.appendRow([
     rowObj.id,
     safeCell_(rowObj.reportDate),
+    safeCell_(rowObj.startTime),
+    safeCell_(rowObj.endTime),
     rowObj.branchId,
-    safeCell_(rowObj.title),
     rowObj.category,
-    rowObj.shift,
-    rowObj.staffPresent,
-    safeCell_(rowObj.summary),
+    safeCell_(rowObj.activityName),
+    safeCell_(rowObj.sharingSessionTitle),
+    safeCell_(rowObj.description),
+    safeCell_(rowObj.achievements),
     safeCell_(rowObj.issues),
+    safeCell_(rowObj.followUp),
     rowObj.status,
+    safeCell_(rowObj.reviewNote),
     rowObj.createdById,
     safeCell_(rowObj.createdByName),
     rowObj.createdByRole,
     rowObj.createdAt,
     rowObj.updatedAt,
+    rowObj.attachmentFileId,
+    safeCell_(rowObj.attachmentName),
+    rowObj.attachmentSize,
   ]);
 
   return jsonResponse_({ ok: true, data: hydrateReport_(rowObj, branchesMap) });
@@ -483,22 +648,48 @@ function handleUpdateReport_(token, payload) {
   for (var r = 1; r < values.length; r++) {
     if (String(values[r][0]) === reportId) {
       var now = new Date().toISOString();
+      var attachmentFileId = String(values[r][19] || '');
+      var attachmentName = String(values[r][20] || '');
+      var attachmentSize = Number(values[r][21] || 0);
+
+      if (validated.category !== 'Sharing Session' || payload.removeAttachment) {
+        trashDriveFileQuietly_(attachmentFileId);
+        attachmentFileId = '';
+        attachmentName = '';
+        attachmentSize = 0;
+      }
+
+      if (payload.attachment && validated.category === 'Sharing Session') {
+        trashDriveFileQuietly_(attachmentFileId);
+        var savedFile = savePdfAttachmentToDrive_(reportId, payload.attachment);
+        attachmentFileId = savedFile.fileId;
+        attachmentName = savedFile.fileName;
+        attachmentSize = savedFile.fileSize;
+      }
+
       var updatedRow = [
         reportId,
         safeCell_(validated.reportDate),
+        safeCell_(validated.startTime),
+        safeCell_(validated.endTime),
         targetBranchId,
-        safeCell_(validated.title),
         validated.category,
-        validated.shift,
-        validated.staffPresent,
-        safeCell_(validated.summary),
+        safeCell_(validated.activityName),
+        safeCell_(validated.sharingSessionTitle),
+        safeCell_(validated.description),
+        safeCell_(validated.achievements),
         safeCell_(validated.issues),
+        safeCell_(validated.followUp),
         validated.status,
-        values[r][10],
-        values[r][11],
-        values[r][12],
-        values[r][13],
+        safeCell_(validated.reviewNote),
+        values[r][14],
+        values[r][15],
+        values[r][16],
+        values[r][17],
         now,
+        attachmentFileId,
+        safeCell_(attachmentName),
+        attachmentSize,
       ];
       sheet.getRange(r + 1, 1, 1, updatedRow.length).setValues([updatedRow]);
 
@@ -508,19 +699,83 @@ function handleUpdateReport_(token, payload) {
           {
             id: reportId,
             reportDate: validated.reportDate,
+            startTime: validated.startTime,
+            endTime: validated.endTime,
             branchId: targetBranchId,
-            title: validated.title,
             category: validated.category,
-            shift: validated.shift,
-            staffPresent: validated.staffPresent,
-            summary: validated.summary,
+            activityName: validated.activityName,
+            sharingSessionTitle: validated.sharingSessionTitle,
+            description: validated.description,
+            achievements: validated.achievements,
             issues: validated.issues,
+            followUp: validated.followUp,
             status: validated.status,
-            createdById: values[r][10],
-            createdByName: values[r][11],
-            createdByRole: values[r][12],
-            createdAt: values[r][13],
+            reviewNote: validated.reviewNote,
+            createdById: values[r][14],
+            createdByName: values[r][15],
+            createdByRole: values[r][16],
+            createdAt: values[r][17],
             updatedAt: now,
+            attachmentFileId: attachmentFileId,
+            attachmentName: attachmentName,
+            attachmentSize: attachmentSize,
+          },
+          branchesMap
+        ),
+      });
+    }
+  }
+
+  return jsonResponse_({ ok: false, error: 'Laporan tidak ditemukan.' });
+}
+
+function handleUpdateReportStatus_(token, payload) {
+  requireAdmin_(token);
+  var reportId = String(payload.id || '');
+  var status = String(payload.status || '');
+  var reviewNote = String(payload.reviewNote || '').trim().slice(0, 1000);
+
+  if (ALLOWED_STATUSES.indexOf(status) === -1) {
+    return jsonResponse_({ ok: false, error: 'Status laporan harus Under Review atau Reviewed.' });
+  }
+
+  var branchesMap = indexById_(readObjects_(SHEET_BRANCHES));
+  var sheet = getSheetOrThrow_(SHEET_REPORTS);
+  var values = sheet.getDataRange().getValues();
+
+  for (var r = 1; r < values.length; r++) {
+    if (String(values[r][0]) === reportId) {
+      var now = new Date().toISOString();
+      sheet.getRange(r + 1, 13).setValue(status);
+      sheet.getRange(r + 1, 14).setValue(safeCell_(reviewNote));
+      sheet.getRange(r + 1, 19).setValue(now);
+
+      return jsonResponse_({
+        ok: true,
+        data: hydrateReport_(
+          {
+            id: values[r][0],
+            reportDate: values[r][1],
+            startTime: values[r][2],
+            endTime: values[r][3],
+            branchId: values[r][4],
+            category: values[r][5],
+            activityName: values[r][6],
+            sharingSessionTitle: values[r][7],
+            description: values[r][8],
+            achievements: values[r][9],
+            issues: values[r][10],
+            followUp: values[r][11],
+            status: status,
+            reviewNote: reviewNote,
+            createdById: values[r][14],
+            createdByName: values[r][15],
+            createdByRole: values[r][16],
+            createdAt: values[r][17],
+            updatedAt: now,
+            attachmentFileId: values[r][19] || '',
+            attachmentName: values[r][20] || '',
+            attachmentSize: Number(values[r][21] || 0),
           },
           branchesMap
         ),
@@ -539,11 +794,51 @@ function handleDeleteReport_(token, payload) {
 
   for (var r = 1; r < values.length; r++) {
     if (String(values[r][0]) === reportId) {
+      var fileId = String(values[r][19] || '');
+      trashDriveFileQuietly_(fileId);
       sheet.deleteRow(r + 1);
       return jsonResponse_({ ok: true, data: { deletedId: reportId } });
     }
   }
   return jsonResponse_({ ok: false, error: 'Laporan tidak ditemukan.' });
+}
+
+function handleGetAttachment_(token, payload) {
+  var user = requireUser_(token);
+  var reportId = String(payload.id || '');
+  var rows = readObjects_(SHEET_REPORTS);
+  var found = null;
+  for (var i = 0; i < rows.length; i++) {
+    if (String(rows[i].id) === reportId) {
+      found = rows[i];
+      break;
+    }
+  }
+  if (!found) {
+    return jsonResponse_({ ok: false, error: 'Laporan tidak ditemukan.' });
+  }
+  if (user.role === 'leader' && String(found.branchId) !== String(user.branchId)) {
+    return jsonResponse_({
+      ok: false,
+      error: 'Akses ditolak. Anda tidak dapat mengunduh lampiran cabang lain.',
+    });
+  }
+
+  var fileId = String(found.attachmentFileId || '');
+  if (!fileId) {
+    return jsonResponse_({ ok: false, error: 'Laporan ini tidak memiliki lampiran PDF.' });
+  }
+
+  var file = DriveApp.getFileById(fileId);
+  var bytes = file.getBlob().getBytes();
+  var base64 = Utilities.base64Encode(bytes);
+  return jsonResponse_({
+    ok: true,
+    data: {
+      fileName: String(found.attachmentName || file.getName() || 'lampiran.pdf'),
+      dataBase64: base64,
+    },
+  });
 }
 
 /* ==================== KELOLA AKUN (ADMIN ONLY) ==================== */
@@ -556,20 +851,35 @@ function handleListUsers_(token) {
 
 function handleCreateUser_(token, payload) {
   requireAdmin_(token);
-  var username = normalizeUsername_(payload.username);
-  var fullName = String(payload.fullName || '').trim();
   var role = payload.role === 'admin' ? 'admin' : 'leader';
+  var fullName = String(payload.fullName || '').trim();
+  var rawSecret = String(payload.secret || '');
+  var secret = role === 'leader' ? rawSecret.trim() : rawSecret;
+  var identifier =
+    role === 'admin' ? normalizeEmail_(payload.identifier) : normalizeUsername_(payload.identifier);
   var branchId = role === 'leader' ? String(payload.branchId || '') : '';
-  var password = String(payload.password || '');
 
-  if (!username || username.length < 3) {
-    return jsonResponse_({ ok: false, error: 'Username minimal 3 karakter.' });
+  if (role === 'admin') {
+    if (!isValidWmAdminEmail_(identifier)) {
+      return jsonResponse_({
+        ok: false,
+        error: 'Akun Admin wajib menggunakan email ' + ADMIN_EMAIL_DOMAIN + '.',
+      });
+    }
+    if (secret.length < 8) {
+      return jsonResponse_({ ok: false, error: 'Password Admin minimal 8 karakter.' });
+    }
+  } else {
+    if (!identifier || identifier.length < 3) {
+      return jsonResponse_({ ok: false, error: 'Username Leader minimal 3 karakter.' });
+    }
+    if (secret.length < 6) {
+      return jsonResponse_({ ok: false, error: 'Kode akses Leader minimal 6 karakter.' });
+    }
   }
+
   if (!fullName) {
     return jsonResponse_({ ok: false, error: 'Nama lengkap wajib diisi.' });
-  }
-  if (password.length < 8) {
-    return jsonResponse_({ ok: false, error: 'Password minimal 8 karakter.' });
   }
 
   var branchesMap = indexById_(readObjects_(SHEET_BRANCHES));
@@ -579,25 +889,28 @@ function handleCreateUser_(token, payload) {
 
   var users = readObjects_(SHEET_USERS);
   var exists = users.some(function (u) {
-    return normalizeUsername_(u.username) === username;
+    return getUserIdentifier_(u).toLowerCase() === identifier.toLowerCase();
   });
   if (exists) {
-    return jsonResponse_({ ok: false, error: 'Username sudah terdaftar.' });
+    return jsonResponse_({
+      ok: false,
+      error: role === 'admin' ? 'Email Admin sudah terdaftar.' : 'Username Leader sudah terdaftar.',
+    });
   }
 
   var salt = generateRandomHex_(16);
-  var hash = hashPassword_(password, salt);
+  var hash = hashSecret_(secret, salt);
   var now = new Date().toISOString();
   var id = 'usr-' + Utilities.getUuid().slice(0, 8);
 
   var sheet = getSheetOrThrow_(SHEET_USERS);
-  sheet.appendRow([id, safeCell_(username), safeCell_(fullName), role, branchId, salt, hash, now]);
+  sheet.appendRow([id, safeCell_(identifier), safeCell_(fullName), role, branchId, salt, hash, now]);
 
   return jsonResponse_({
     ok: true,
     data: toUserProfile_({
       id: id,
-      username: username,
+      identifier: identifier,
       fullName: fullName,
       role: role,
       branchId: branchId,
@@ -624,51 +937,165 @@ function handleDeleteUser_(token, payload) {
   return jsonResponse_({ ok: false, error: 'Pengguna tidak ditemukan.' });
 }
 
-/* ==================== UTILITAS & KEAMANAN ==================== */
+/* ==================== VALIDASI & UTILITAS ==================== */
 
 function validateReportPayload_(payload, role) {
   var reportDate = String(payload.reportDate || '').trim();
   if (!/^\d{4}-\d{2}-\d{2}$/.test(reportDate)) {
-    throw new Error('Format tanggal laporan harus YYYY-MM-DD.');
+    throw new Error('Format tanggal kegiatan harus YYYY-MM-DD.');
   }
 
-  var title = String(payload.title || '').trim();
-  if (title.length < 3 || title.length > 160) {
-    throw new Error('Judul laporan harus antara 3 hingga 160 karakter.');
+  var startTime = String(payload.startTime || '').trim();
+  var endTime = String(payload.endTime || '').trim();
+  if (!/^\d{2}:\d{2}$/.test(startTime) || !/^\d{2}:\d{2}$/.test(endTime)) {
+    throw new Error('Jam mulai dan jam selesai wajib berformat HH:MM.');
+  }
+  if (endTime <= startTime) {
+    throw new Error('Jam selesai harus lebih akhir daripada jam mulai.');
   }
 
   var category = String(payload.category || '');
   if (ALLOWED_CATEGORIES.indexOf(category) === -1) {
-    throw new Error('Kategori laporan tidak valid.');
+    throw new Error('Kategori kegiatan tidak valid.');
   }
 
-  var summary = String(payload.summary || '').trim();
-  if (summary.length < 5 || summary.length > 3000) {
-    throw new Error('Ringkasan laporan minimal 5 karakter.');
+  var activityName = String(payload.activityName || '').trim();
+  if (activityName.length < 3 || activityName.length > 180) {
+    throw new Error('Nama kegiatan harus antara 3 hingga 180 karakter.');
   }
 
-  var issues = String(payload.issues || '').trim().slice(0, 2000);
-  var shift = String(payload.shift || 'Penuh');
-  if (ALLOWED_SHIFTS.indexOf(shift) === -1) {
-    throw new Error('Shift kegiatan tidak valid.');
+  var sharingSessionTitle = '';
+  if (category === 'Sharing Session') {
+    sharingSessionTitle = String(payload.sharingSessionTitle || '').trim();
+    if (sharingSessionTitle.length < 3 || sharingSessionTitle.length > 180) {
+      throw new Error('Judul Sharing Session wajib diisi (minimal 3 karakter).');
+    }
   }
-  var staffPresent = Math.max(0, Math.floor(Number(payload.staffPresent) || 0));
 
-  var status = 'Terkirim';
-  if (role === 'admin' && payload.status && ALLOWED_STATUSES.indexOf(String(payload.status)) !== -1) {
-    status = String(payload.status);
+  var description = String(payload.description || '').trim();
+  if (description.length < 5 || description.length > 3000) {
+    throw new Error('Uraian kegiatan minimal 5 karakter.');
+  }
+
+  var achievements = String(payload.achievements || '').trim();
+  if (achievements.length < 3 || achievements.length > 2000) {
+    throw new Error('Capaian kegiatan wajib diisi (minimal 3 karakter).');
+  }
+
+  var issues = String(payload.issues || '').trim();
+  if (issues.length < 3 || issues.length > 2000) {
+    throw new Error('Kolom kendala wajib diisi (minimal 3 karakter).');
+  }
+
+  var followUp = String(payload.followUp || '').trim();
+  if (followUp.length < 3 || followUp.length > 2000) {
+    throw new Error('Kolom tindak lanjut wajib diisi (minimal 3 karakter).');
+  }
+
+  var status = 'Under Review';
+  var reviewNote = '';
+  if (role === 'admin') {
+    if (payload.status && ALLOWED_STATUSES.indexOf(String(payload.status)) !== -1) {
+      status = String(payload.status);
+    }
+    reviewNote = String(payload.reviewNote || '').trim().slice(0, 1000);
   }
 
   return {
     reportDate: reportDate,
-    title: title,
+    startTime: startTime,
+    endTime: endTime,
     category: category,
-    shift: shift,
-    staffPresent: staffPresent,
-    summary: summary,
+    activityName: activityName,
+    sharingSessionTitle: sharingSessionTitle,
+    description: description,
+    achievements: achievements,
     issues: issues,
+    followUp: followUp,
     status: status,
+    reviewNote: reviewNote,
   };
+}
+
+function getOrCreateAttachmentFolder_() {
+  var folders = DriveApp.getFoldersByName(DRIVE_ATTACHMENT_FOLDER);
+  if (folders.hasNext()) {
+    return folders.next();
+  }
+  return DriveApp.createFolder(DRIVE_ATTACHMENT_FOLDER);
+}
+
+function sanitizePdfName_(rawName) {
+  var clean = String(rawName || 'lampiran.pdf')
+    .replace(/^.*[\\/]/, '')
+    .replace(/[^a-zA-Z0-9._\-\s]/g, '_')
+    .replace(/\s+/g, '-')
+    .replace(/^\.+/, '')
+    .slice(0, 110);
+  return clean.toLowerCase().slice(-4) === '.pdf' ? clean : (clean || 'lampiran') + '.pdf';
+}
+
+function savePdfAttachmentToDrive_(reportId, attachment) {
+  if (!attachment || typeof attachment !== 'object') {
+    throw new Error('Lampiran PDF tidak valid.');
+  }
+  if (String(attachment.mimeType || '').toLowerCase() !== 'application/pdf') {
+    throw new Error('Lampiran wajib berformat PDF.');
+  }
+
+  var base64 = String(attachment.dataBase64 || '').replace(/\s+/g, '');
+  var bytes = Utilities.base64Decode(base64);
+  if (!bytes || bytes.length < 5) {
+    throw new Error('File PDF kosong atau rusak.');
+  }
+  if (bytes.length > MAX_PDF_BYTES) {
+    throw new Error('Ukuran file PDF maksimal 5 MB.');
+  }
+
+  // Validasi header magic bytes %PDF-
+  if (
+    bytes[0] !== 37 ||
+    bytes[1] !== 80 ||
+    bytes[2] !== 68 ||
+    bytes[3] !== 70 ||
+    bytes[4] !== 45
+  ) {
+    throw new Error('File yang diunggah bukan dokumen PDF yang valid.');
+  }
+
+  var safeName = sanitizePdfName_(attachment.fileName);
+  var folder = getOrCreateAttachmentFolder_();
+  var blob = Utilities.newBlob(bytes, 'application/pdf', reportId + '-' + safeName);
+  var file = folder.createFile(blob);
+
+  return {
+    fileId: file.getId(),
+    fileName: safeName,
+    fileSize: bytes.length,
+  };
+}
+
+function trashDriveFileQuietly_(fileId) {
+  if (!fileId) return;
+  try {
+    DriveApp.getFileById(fileId).setTrashed(true);
+  } catch (err) {
+    // abaikan jika file sudah dihapus manual
+  }
+}
+
+function formatSheetDate_(val) {
+  if (val instanceof Date && !isNaN(val.getTime())) {
+    return Utilities.formatDate(val, Session.getScriptTimeZone(), 'yyyy-MM-dd');
+  }
+  return String(val || '').replace(/^'/, '');
+}
+
+function formatSheetTime_(val) {
+  if (val instanceof Date && !isNaN(val.getTime())) {
+    return Utilities.formatDate(val, Session.getScriptTimeZone(), 'HH:mm');
+  }
+  return String(val || '').replace(/^'/, '');
 }
 
 function toUserProfile_(u) {
@@ -676,7 +1103,7 @@ function toUserProfile_(u) {
   var branch = u.branchId ? branchesMap[String(u.branchId)] : null;
   return {
     id: String(u.id),
-    username: String(u.username),
+    identifier: getUserIdentifier_(u),
     fullName: String(u.fullName),
     role: u.role === 'admin' ? 'admin' : 'leader',
     branchId: branch ? String(branch.id) : null,
@@ -688,19 +1115,29 @@ function toUserProfile_(u) {
 
 function hydrateReport_(row, branchesMap) {
   var branch = branchesMap[String(row.branchId)] || null;
+  var fileName = String(row.attachmentName || '');
+  var fileId = String(row.attachmentFileId || '');
+  var fileSize = Number(row.attachmentSize || 0);
   return {
     id: String(row.id),
-    reportDate: String(row.reportDate),
+    reportDate: formatSheetDate_(row.reportDate),
+    startTime: formatSheetTime_(row.startTime),
+    endTime: formatSheetTime_(row.endTime),
     branchId: String(row.branchId),
     branchName: branch ? String(branch.name) : 'Cabang Tidak Dikenal',
     branchCode: branch ? String(branch.code) : '-',
-    title: String(row.title),
     category: String(row.category),
-    shift: String(row.shift || 'Penuh'),
-    staffPresent: Number(row.staffPresent) || 0,
-    summary: String(row.summary || ''),
+    activityName: String(row.activityName || ''),
+    sharingSessionTitle: String(row.sharingSessionTitle || ''),
+    description: String(row.description || ''),
+    achievements: String(row.achievements || ''),
     issues: String(row.issues || ''),
-    status: String(row.status || 'Terkirim'),
+    followUp: String(row.followUp || ''),
+    hasAttachment: Boolean(fileId && fileName),
+    attachmentName: fileName,
+    attachmentSize: fileSize,
+    status: row.status === 'Reviewed' ? 'Reviewed' : 'Under Review',
+    reviewNote: String(row.reviewNote || ''),
     createdById: String(row.createdById || ''),
     createdByName: String(row.createdByName || ''),
     createdByRole: row.createdByRole === 'admin' ? 'admin' : 'leader',
@@ -744,13 +1181,21 @@ function indexById_(list) {
   return map;
 }
 
+function normalizeEmail_(val) {
+  return String(val || '').trim().toLowerCase();
+}
+
+function isValidWmAdminEmail_(email) {
+  return (
+    /^[a-z0-9._%+-]+@wmcenter\.id$/i.test(email) &&
+    email.length <= 120
+  );
+}
+
 function normalizeUsername_(val) {
   return String(val || '').trim().toLowerCase().replace(/[^a-z0-9._-]/g, '');
 }
 
-/**
- * Mencegah formula injection di Google Sheets saat teks dimulai dengan =, +, -, atau @.
- */
 function safeCell_(val) {
   var str = String(val || '');
   if (/^[=+\-@]/.test(str)) {
@@ -765,10 +1210,10 @@ function generateRandomHex_(byteLen) {
   return bytesToHex_(digest).slice(0, byteLen * 2);
 }
 
-function hashPassword_(password, salt) {
+function hashSecret_(secret, salt) {
   var digest = Utilities.computeDigest(
     Utilities.DigestAlgorithm.SHA_256,
-    salt + ':' + password,
+    salt + ':' + secret,
     Utilities.Charset.UTF_8
   );
   return bytesToHex_(digest);

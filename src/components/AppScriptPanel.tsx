@@ -1,19 +1,9 @@
 import React, { useEffect, useState } from 'react';
-import {
-  AlertCircle,
-  Check,
-  CheckCircle2,
-  Copy,
-  Download,
-  FileCode2,
-  Link2,
-  RefreshCw,
-} from 'lucide-react';
 import { api } from '../lib/api';
 import type { AppScriptConfigState } from '../types';
 
 interface AppScriptPanelProps {
-  token: string;
+  token: string | null;
   onModeSwitchedToAppScript: () => void;
 }
 
@@ -135,7 +125,7 @@ export function AppScriptPanel({ token, onModeSwitchedToAppScript }: AppScriptPa
 
   if (loading) {
     return (
-      <div className="bg-white border border-slate-200 rounded-lg p-6 sm:p-8 text-sm text-slate-500">
+      <div className="bg-white border border-slate-200 rounded-lg p-6 text-sm text-slate-500">
         Memuat konfigurasi Google Apps Script...
       </div>
     );
@@ -143,23 +133,22 @@ export function AppScriptPanel({ token, onModeSwitchedToAppScript }: AppScriptPa
 
   return (
     <div className="space-y-5 sm:space-y-6">
-      {/* Konfigurasi Koneksi Web App */}
+      {/* Koneksi Web App */}
       <section className="bg-white border border-slate-200 rounded-lg p-4 sm:p-6">
-        <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3 pb-4 sm:pb-5 border-b border-slate-200">
+        <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3 pb-4 border-b border-slate-200">
           <div>
-            <div className="flex items-center gap-2 text-slate-900">
-              <Link2 className="w-4 h-4 text-teal-700 shrink-0" />
-              <h2 className="text-base font-semibold">Koneksi Web App Google Apps Script</h2>
-            </div>
+            <h2 className="text-base font-semibold text-[#0A172E]">
+              Koneksi Google Apps Script & Spreadsheet
+            </h2>
             <p className="mt-1 text-xs sm:text-sm text-slate-600 max-w-2xl leading-relaxed">
-              Hubungkan aplikasi ini dengan Google Sheets Anda melalui Google Apps Script Web App.
-              Seluruh permintaan diproksi secara aman dari sisi server.
+              Seluruh data cabang WM Center, akun Leader/Admin, dan laporan kegiatan tersimpan
+              langsung di Google Sheets Anda melalui Web App Apps Script.
             </p>
           </div>
 
           <div className="sm:text-right text-xs text-slate-500 shrink-0">
             <div>Mode aktif</div>
-            <div className="mt-0.5 text-sm font-semibold text-slate-900">
+            <div className="mt-0.5 text-sm font-semibold text-[#033367]">
               {config?.mode === 'appscript' ? 'Google Apps Script' : 'Server Lokal'}
             </div>
           </div>
@@ -168,25 +157,20 @@ export function AppScriptPanel({ token, onModeSwitchedToAppScript }: AppScriptPa
         {feedback && (
           <div
             role="status"
-            className={`mt-4 sm:mt-5 flex items-start gap-2.5 rounded-md border px-3.5 py-3 text-sm ${
+            className={`mt-4 rounded-md border px-3.5 py-3 text-sm ${
               feedback.type === 'ok'
-                ? 'border-emerald-200 bg-emerald-50 text-emerald-800'
+                ? 'border-[#033367]/20 bg-[#033367]/5 text-[#033367]'
                 : 'border-rose-200 bg-rose-50 text-rose-800'
             }`}
           >
-            {feedback.type === 'ok' ? (
-              <CheckCircle2 className="w-4 h-4 mt-0.5 shrink-0 text-emerald-600" />
-            ) : (
-              <AlertCircle className="w-4 h-4 mt-0.5 shrink-0 text-rose-600" />
-            )}
-            <span>{feedback.text}</span>
+            {feedback.text}
           </div>
         )}
 
         <div className="mt-5 space-y-4">
           <div>
-            <label htmlFor="gas-url" className="block text-sm font-medium text-slate-700">
-              URL Deployment Web App Google Apps Script
+            <label htmlFor="gas-url" className="block text-sm font-medium text-[#0A172E]">
+              URL Web App Google Apps Script
             </label>
             <input
               id="gas-url"
@@ -194,15 +178,16 @@ export function AppScriptPanel({ token, onModeSwitchedToAppScript }: AppScriptPa
               value={urlInput}
               onChange={(e) => setUrlInput(e.target.value)}
               placeholder="https://script.google.com/macros/s/AKfycb.../exec"
-              className="mt-1.5 block w-full min-h-[44px] rounded-md border border-slate-300 bg-white px-3.5 py-2.5 text-xs sm:text-sm font-mono text-slate-900 placeholder:text-slate-400 focus:border-teal-700 focus:outline-none focus:ring-2 focus:ring-teal-700/15"
+              className="mt-1.5 block w-full min-h-[44px] rounded-md border border-slate-300 bg-white px-3.5 py-2.5 text-xs sm:text-sm font-mono text-[#0A172E] placeholder:text-slate-400 focus:border-[#033367] focus:outline-none focus:ring-2 focus:ring-[#033367]/15"
             />
             <p className="mt-1.5 text-xs text-slate-500 leading-relaxed">
-              Hanya menerima endpoint resmi HTTPS dari{' '}
-              <span className="font-mono text-slate-700 break-all">
-                script.google.com/macros/s/.../exec
+              Hanya menerima endpoint resmi{' '}
+              <span className="font-mono text-[#0A172E] break-all">
+                https://script.google.com/macros/s/.../exec
               </span>
-              . Simpan permanen di variabel{' '}
-              <span className="font-mono text-slate-700">APPS_SCRIPT_URL</span> di menu Secrets.
+              . Setelah diaktifkan, koneksi tersimpan otomatis di server (opsional: bisa juga diisi
+              lewat variabel <span className="font-mono text-[#0A172E]">APPS_SCRIPT_URL</span> saat
+              deploy).
             </p>
           </div>
 
@@ -211,17 +196,16 @@ export function AppScriptPanel({ token, onModeSwitchedToAppScript }: AppScriptPa
               type="button"
               disabled={testing || !urlInput.trim()}
               onClick={handleTestConnection}
-              className="w-full sm:w-auto min-h-[42px] inline-flex items-center justify-center gap-1.5 px-4 py-2 text-sm font-medium text-slate-700 bg-white border border-slate-300 rounded-md hover:bg-slate-50 disabled:opacity-50 transition-colors whitespace-nowrap"
+              className="w-full sm:w-auto min-h-[42px] px-4 py-2 text-sm font-medium text-[#0A172E] bg-white border border-slate-300 rounded-md hover:bg-slate-50 disabled:opacity-50 transition-colors whitespace-nowrap"
             >
-              <RefreshCw className={`w-4 h-4 ${testing ? 'animate-spin' : ''}`} />
-              <span>{testing ? 'Menguji...' : 'Uji Koneksi'}</span>
+              {testing ? 'Menguji Koneksi...' : 'Uji Koneksi'}
             </button>
 
             <button
               type="button"
               disabled={saving || !urlInput.trim()}
               onClick={() => handleSaveMode('appscript')}
-              className="w-full sm:w-auto min-h-[42px] px-4 py-2 text-sm font-medium text-white bg-teal-700 rounded-md hover:bg-teal-800 disabled:opacity-50 transition-colors whitespace-nowrap"
+              className="w-full sm:w-auto min-h-[42px] px-4 py-2 text-sm font-medium text-white bg-[#033367] rounded-md hover:bg-[#0A172E] disabled:opacity-50 transition-colors whitespace-nowrap"
             >
               {saving ? 'Memverifikasi...' : 'Aktifkan Mode Apps Script'}
             </button>
@@ -231,7 +215,7 @@ export function AppScriptPanel({ token, onModeSwitchedToAppScript }: AppScriptPa
                 type="button"
                 disabled={saving}
                 onClick={() => handleSaveMode('local')}
-                className="w-full sm:w-auto min-h-[42px] px-4 py-2 text-sm font-medium text-slate-600 hover:text-slate-900 transition-colors whitespace-nowrap"
+                className="w-full sm:w-auto min-h-[42px] px-4 py-2 text-sm font-medium text-slate-600 hover:text-[#0A172E] transition-colors whitespace-nowrap"
               >
                 Kembali ke Server Lokal
               </button>
@@ -240,73 +224,69 @@ export function AppScriptPanel({ token, onModeSwitchedToAppScript }: AppScriptPa
         </div>
       </section>
 
-      {/* Panduan 4 Langkah Pemasangan */}
+      {/* Panduan 4 Langkah */}
       <section className="bg-white border border-slate-200 rounded-lg p-4 sm:p-6">
-        <h3 className="text-base font-semibold text-slate-900">
-          Panduan Pemasangan di Google Sheets
+        <h3 className="text-base font-semibold text-[#0A172E]">
+          Langkah Pemasangan di Google Sheets
         </h3>
         <ol className="mt-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-5 text-sm">
           <li className="border-t border-slate-200 pt-3">
-            <p className="font-semibold text-slate-900">01. Buat Google Sheets</p>
+            <p className="font-semibold text-[#0A172E]">01. Siapkan Spreadsheet</p>
             <p className="mt-1 text-xs text-slate-600 leading-relaxed">
-              Buat spreadsheet baru di Google Drive, lalu buka menu{' '}
-              <strong className="font-medium text-slate-800">Ekstensi → Apps Script</strong>.
+              Buat Google Sheets baru, lalu buka menu{' '}
+              <strong className="font-medium text-[#0A172E]">Ekstensi → Apps Script</strong>.
             </p>
           </li>
           <li className="border-t border-slate-200 pt-3">
-            <p className="font-semibold text-slate-900">02. Tempel Kode Code.gs</p>
+            <p className="font-semibold text-[#0A172E]">02. Tempel Code.gs</p>
             <p className="mt-1 text-xs text-slate-600 leading-relaxed">
-              Salin seluruh kode <span className="font-mono">Code.gs</span> di bawah ini ke editor
-              Apps Script, lalu simpan proyek.
+              Ganti seluruh isi file <span className="font-mono">Code.gs</span> dengan kode terbaru
+              di bawah ini, lalu simpan.
             </p>
           </li>
           <li className="border-t border-slate-200 pt-3">
-            <p className="font-semibold text-slate-900">03. Jalankan Setup</p>
+            <p className="font-semibold text-[#0A172E]">03. Jalankan setupSpreadsheet</p>
             <p className="mt-1 text-xs text-slate-600 leading-relaxed">
-              Pilih fungsi <span className="font-mono">setupSpreadsheet</span> di toolbar lalu klik{' '}
-              <strong className="font-medium text-slate-800">Run</strong> untuk membuat sheet
-              Branches, Users, dan Reports otomatis.
+              Jalankan fungsi <span className="font-mono">setupSpreadsheet</span> sekali untuk
+              membuat sheet Branches, Users, dan Reports secara otomatis.
             </p>
           </li>
           <li className="border-t border-slate-200 pt-3">
-            <p className="font-semibold text-slate-900">04. Deploy Web App</p>
+            <p className="font-semibold text-[#0A172E]">04. Deploy Web App</p>
             <p className="mt-1 text-xs text-slate-600 leading-relaxed">
-              Klik <strong className="font-medium text-slate-800">Deploy → New deployment</strong>,
-              pilih <strong className="font-medium text-slate-800">Web app</strong> (Execute as:
-              Me, Access: Anyone), lalu tempel URL <span className="font-mono">/exec</span> di atas.
+              Pilih <strong className="font-medium text-[#0A172E]">Deploy → New deployment</strong>{' '}
+              (Web app · Execute as: Me · Who has access: Anyone), lalu tempel URL{' '}
+              <span className="font-mono">/exec</span> di atas.
             </p>
           </li>
         </ol>
       </section>
 
-      {/* Viewer Kode Code.gs */}
+      {/* Viewer Code.gs */}
       <section className="bg-white border border-slate-200 rounded-lg overflow-hidden">
         <div className="px-4 sm:px-5 py-3.5 border-b border-slate-200 flex flex-wrap items-center justify-between gap-3">
-          <div className="flex items-center gap-2 text-sm font-semibold text-slate-900">
-            <FileCode2 className="w-4 h-4 text-teal-700 shrink-0" />
-            <span className="font-mono">appscript/Code.gs</span>
-          </div>
+          <span className="text-sm font-semibold font-mono text-[#0A172E]">
+            appscript/Code.gs
+          </span>
           <div className="flex items-center gap-2">
             <button
               type="button"
               onClick={handleCopyCode}
-              className="min-h-[36px] inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-slate-700 bg-white border border-slate-300 rounded-md hover:bg-slate-50 transition-colors whitespace-nowrap"
+              className="min-h-[36px] px-3 py-1.5 text-xs font-medium text-[#0A172E] bg-white border border-slate-300 rounded-md hover:bg-slate-50 transition-colors whitespace-nowrap"
             >
-              {copied ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
-              <span>{copied ? 'Tersalin' : 'Salin Kode'}</span>
+              {copied ? 'Tersalin' : 'Salin Kode'}
             </button>
             <button
               type="button"
               onClick={handleDownloadCode}
-              className="min-h-[36px] inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-slate-700 bg-white border border-slate-300 rounded-md hover:bg-slate-50 transition-colors whitespace-nowrap"
+              className="min-h-[36px] px-3 py-1.5 text-xs font-medium text-[#0A172E] bg-white border border-slate-300 rounded-md hover:bg-slate-50 transition-colors whitespace-nowrap"
             >
-              <Download className="w-3.5 h-3.5" />
-              <span>Unduh</span>
+              Unduh Code.gs
             </button>
           </div>
         </div>
 
-        <pre className="p-4 sm:p-5 bg-slate-950 text-slate-200 text-xs font-mono leading-relaxed overflow-x-auto max-h-[420px] sm:max-h-[480px]">
+        <pre className="p-4 sm:p-5 bg-[#0A172E] text-slate-200 text-xs font-mono leading-relaxed overflow-x-auto max-h-[440px]">
           <code>{code}</code>
         </pre>
       </section>

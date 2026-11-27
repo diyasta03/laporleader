@@ -1,36 +1,30 @@
 export type UserRole = 'admin' | 'leader';
 
 export type ReportCategory =
-  | 'Operasional Harian'
-  | 'Pelayanan & Lapangan'
-  | 'Stok & Logistik'
-  | 'SDM & Kehadiran'
+  | 'Operasional & Layanan Fisioterapi'
+  | 'Sharing Session'
+  | 'WM Class & Program Wellness'
+  | 'Briefing & Evaluasi Tim'
+  | 'Event & Aktivasi Komunitas'
+  | 'Perawatan Alat & Fasilitas'
   | 'Kendala & Insiden';
 
-export type ReportShift = 'Pagi' | 'Siang' | 'Malam' | 'Penuh';
-
-export type ReportStatus =
-  | 'Terkirim'
-  | 'Ditinjau'
-  | 'Selesai'
-  | 'Perlu Revisi';
+export type ReportStatus = 'Under Review' | 'Reviewed';
 
 export const REPORT_CATEGORIES: ReportCategory[] = [
-  'Operasional Harian',
-  'Pelayanan & Lapangan',
-  'Stok & Logistik',
-  'SDM & Kehadiran',
+  'Operasional & Layanan Fisioterapi',
+  'Sharing Session',
+  'WM Class & Program Wellness',
+  'Briefing & Evaluasi Tim',
+  'Event & Aktivasi Komunitas',
+  'Perawatan Alat & Fasilitas',
   'Kendala & Insiden',
 ];
 
-export const REPORT_SHIFTS: ReportShift[] = ['Pagi', 'Siang', 'Malam', 'Penuh'];
+export const REPORT_STATUSES: ReportStatus[] = ['Under Review', 'Reviewed'];
 
-export const REPORT_STATUSES: ReportStatus[] = [
-  'Terkirim',
-  'Ditinjau',
-  'Selesai',
-  'Perlu Revisi',
-];
+export const WM_ADMIN_DOMAIN = '@wmcenter.id';
+export const MAX_PDF_ATTACHMENT_BYTES = 5 * 1024 * 1024; // 5 MB
 
 export interface Branch {
   id: string;
@@ -42,7 +36,8 @@ export interface Branch {
 
 export interface UserProfile {
   id: string;
-  username: string;
+  /** Email @wmcenter.id untuk Admin, atau username untuk Leader */
+  identifier: string;
   fullName: string;
   role: UserRole;
   branchId: string | null;
@@ -51,19 +46,32 @@ export interface UserProfile {
   createdAt: string;
 }
 
+export interface ReportAttachmentInput {
+  fileName: string;
+  mimeType: 'application/pdf';
+  dataBase64: string;
+}
+
 export interface BranchReport {
   id: string;
   reportDate: string;
+  startTime: string;
+  endTime: string;
   branchId: string;
   branchName: string;
   branchCode: string;
-  title: string;
   category: ReportCategory;
-  shift: ReportShift;
-  staffPresent: number;
-  summary: string;
+  activityName: string;
+  sharingSessionTitle: string;
+  description: string;
+  achievements: string;
   issues: string;
+  followUp: string;
+  hasAttachment: boolean;
+  attachmentName: string;
+  attachmentSize: number;
   status: ReportStatus;
+  reviewNote: string;
   createdById: string;
   createdByName: string;
   createdByRole: UserRole;
@@ -73,14 +81,20 @@ export interface BranchReport {
 
 export interface ReportPayload {
   reportDate: string;
+  startTime: string;
+  endTime: string;
   branchId: string;
-  title: string;
   category: ReportCategory;
-  shift: ReportShift;
-  staffPresent: number;
-  summary: string;
+  activityName: string;
+  sharingSessionTitle: string;
+  description: string;
+  achievements: string;
   issues: string;
+  followUp: string;
+  attachment?: ReportAttachmentInput | null;
+  removeAttachment?: boolean;
   status?: ReportStatus;
+  reviewNote?: string;
 }
 
 export interface AuthBootstrapStatus {
@@ -88,6 +102,7 @@ export interface AuthBootstrapStatus {
   hasEnvAdmin: boolean;
   backendMode: 'local' | 'appscript';
   appsScriptConfigured: boolean;
+  adminEmailDomain: string;
 }
 
 export interface AppScriptConfigState {
