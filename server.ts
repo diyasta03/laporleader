@@ -1306,6 +1306,89 @@ async function startServer() {
     }
   });
 
+  app.post('/api/auth/google', async (req, res) => {
+    try {
+      const idToken = String(req.body?.idToken ?? '').trim();
+      if (!idToken) {
+        res.status(400).json({ error: 'Token Google tidak ditemukan.' });
+        return;
+      }
+
+      // 1. Jika backend terhubung ke Google Apps Script
+      if (appsScriptState.mode === 'appscript' && appsScriptState.url) {
+        const remote = await callAppsScriptAction('googleLogin', { idToken });
+        if (!remote.ok) {
+          res.status(401).json({ error: remote.error || 'Autentikasi Google Admin gagal.' });
+          return;
+        }
+
+        const data = remote.data as { token: string; user: UserProfile };
+        const localToken = createLocalSession(data.user.id, {
+          appsScriptToken: data.token,
+          userSnapshot: data.user,
+        });
+        setSessionCookie(req, res, localToken);
+        res.json({ token: localToken, user: data.user });
+        return;
+      }
+
+      // 2. Fallback untuk mode 'local' (sebelum Apps Script dihubungkan)
+      const verifyRes = await fetch(
+        `https://oauth2.googleapis.com/tokeninfo?id_token=${encodeURIComponent(idToken)}`
+      );
+      if (!verifyRes.ok) {
+        res.status(401).json({ error: 'Token Google tidak valid atau kedaluwarsa.' });
+        return;
+      }
+
+      const profile = (await verifyRes.json()) as {
+        aud?: string;
+        email?: string;
+        email_verified?: string | boolean;
+        name?: string;
+      };
+
+      const expectedClientId =
+        '180602020868-b8qqfd0rqugu7vraqjdl21r87rif1of3.apps.googleusercontent.com'; if (String(profile.aud ?? '') !== expectedClientId) {
+          res.status(401).json({ error: 'Client ID token Google tidak sesuai.' });
+          return;
+        }
+
+      const email = normalizeEmail(profile.email);
+      const isVerified = String(profile.email_verified) === 'true';
+      if (!isVerified || !isValidWmAdminEmail(email)) {
+        res.status(401).json({
+          error: `Akses ditolak. Login Admin wajib menggunakan email ${ADMIN_EMAIL_DOMAIN}.`,
+        });
+        return;
+      }
+
+      let found = users.find((u) => u.role === 'admin' && u.identifier === email);
+      if (!found) {
+        const { salt, hash } = hashSecret(crypto.randomBytes(32).toString('hex'));
+        found = {
+          id: 'usr-' + crypto.randomBytes(6).toString('hex'),
+          identifier: email,
+          fullName: String(profile.name || email.split('@')[0]).trim(),
+          role: 'admin',
+          branchId: null,
+          secretSalt: salt,
+          secretHash: hash,
+          createdAt: new Date().toISOString(),
+        };
+        users.push(found);
+      }
+
+      const token = createLocalSession(found.id);
+      setSessionCookie(req, res, token);
+      res.json({ token, user: toUserProfile(found) });
+    } catch (err) {
+      res.status(502).json({
+        error: err instanceof Error ? err.message : 'Gagal memproses autentikasi Google.',
+      });
+    }
+  });
+
   app.post('/api/auth/logout', async (req: AuthedRequest, res) => {
     const { token, viaCookie } = extractAuthCredentials(req);
     if (viaCookie && !isSafeCookieMutation(req)) {
@@ -1611,12 +1694,12 @@ async function startServer() {
           reviewNote: validated.reviewNote,
           ...(validated.attachment
             ? {
-                attachment: {
-                  fileName: validated.attachment.fileName,
-                  mimeType: 'application/pdf',
-                  dataBase64: validated.attachment.dataBase64,
-                },
-              }
+              attachment: {
+                fileName: validated.attachment.fileName,
+                mimeType: 'application/pdf',
+                dataBase64: validated.attachment.dataBase64,
+              },
+            }
             : {}),
         };
         const remote = await callAppsScriptAction(
@@ -1769,12 +1852,12 @@ async function startServer() {
           removeAttachment: validated.removeAttachment,
           ...(validated.attachment
             ? {
-                attachment: {
-                  fileName: validated.attachment.fileName,
-                  mimeType: 'application/pdf',
-                  dataBase64: validated.attachment.dataBase64,
-                },
-              }
+              attachment: {
+                fileName: validated.attachment.fileName,
+                mimeType: 'application/pdf',
+                dataBase64: validated.attachment.dataBase64,
+              },
+            }
             : {}),
         };
         const remote = await callAppsScriptAction(
