@@ -7,6 +7,7 @@ import {
   type UserProfile,
   type UserRole,
 } from '../types';
+import { GoogleLogin } from '@react-oauth/google';
 
 interface AuthScreenProps {
   status: AuthBootstrapStatus;
@@ -136,6 +137,26 @@ export function AuthScreen({
     }
   }
 
+  async function handleGoogleSuccess(idToken?: string) {
+    if (!idToken) {
+      setError('Token kredensial Google tidak diterima.');
+      return;
+    }
+
+    setError(null);
+    onClearNotice?.();
+    setSubmitting(true);
+
+    try {
+      const res = await api.googleLogin(idToken);
+      onAuthenticated(res.token, res.user);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Autentikasi Google Admin gagal.');
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
   return (
     <div className="min-h-screen bg-[#F7F9FC] flex flex-col lg:flex-row">
       {/* Mobile Header Ringkas */}
@@ -155,7 +176,7 @@ export function AuthScreen({
 
           <div className="mt-16 max-w-md">
             <p className="text-xs font-medium text-white/60">
-             Sistem Pelaporan Cabang
+              Sistem Pelaporan Cabang
             </p>
             <h1 className="mt-3 text-3xl xl:text-4xl font-bold tracking-tight text-white leading-tight">
               Laporan kegiatan harian antar cabang dalam satu portal.
@@ -218,11 +239,10 @@ export function AuthScreen({
                   role="tab"
                   aria-selected={loginRole === 'leader'}
                   onClick={() => handleRoleSwitch('leader')}
-                  className={`min-h-[40px] px-3 py-2 text-xs font-semibold rounded transition-colors whitespace-nowrap ${
-                    loginRole === 'leader'
-                      ? 'bg-[#033367] text-white'
-                      : 'text-slate-600 hover:text-[#0A172E]'
-                  }`}
+                  className={`min-h-[40px] px-3 py-2 text-xs font-semibold rounded transition-colors whitespace-nowrap ${loginRole === 'leader'
+                    ? 'bg-[#033367] text-white'
+                    : 'text-slate-600 hover:text-[#0A172E]'
+                    }`}
                 >
                   Leader Cabang
                 </button>
@@ -231,11 +251,10 @@ export function AuthScreen({
                   role="tab"
                   aria-selected={loginRole === 'admin'}
                   onClick={() => handleRoleSwitch('admin')}
-                  className={`min-h-[40px] px-3 py-2 text-xs font-semibold rounded transition-colors whitespace-nowrap ${
-                    loginRole === 'admin'
-                      ? 'bg-[#033367] text-white'
-                      : 'text-slate-600 hover:text-[#0A172E]'
-                  }`}
+                  className={`min-h-[40px] px-3 py-2 text-xs font-semibold rounded transition-colors whitespace-nowrap ${loginRole === 'admin'
+                    ? 'bg-[#033367] text-white'
+                    : 'text-slate-600 hover:text-[#0A172E]'
+                    }`}
                 >
                   Admin WM Center
                 </button>
@@ -243,9 +262,34 @@ export function AuthScreen({
               <p className="mt-2 text-xs text-slate-500">
                 {loginRole === 'leader'
                   ? 'Masuk memakai username & kode akses cabang dari Admin.'
-                  : `Masuk memakai email resmi ${WM_ADMIN_DOMAIN} & password.`}
+                  : `Masuk memakai akun Google terdaftar ${WM_ADMIN_DOMAIN}.`}
               </p>
-            </div>
+              {loginRole === 'admin' && (
+                <div className="mt-4 rounded-md border border-slate-200 bg-slate-50 p-3.5">
+                  <div className="flex justify-center">
+                    <GoogleLogin
+                      onSuccess={(credentialResponse) =>
+                        handleGoogleSuccess(credentialResponse.credential)
+                      }
+                      onError={() =>
+                        setError('Login dengan Google dibatalkan atau gagal diproses.')
+                      }
+                      theme="filled_blue"
+                      size="large"
+                      text="signin_with"
+                      shape="rectangular"
+                      width="340"
+                    />
+                  </div>
+                  <p className="mt-2.5 text-center text-xs text-slate-500">
+                    Gunakan akun Google resmi berakhiran{' '}
+                    <span className="font-mono font-medium text-slate-700">
+                      {WM_ADMIN_DOMAIN}
+                    </span>
+                    .
+                  </p>
+                </div>
+              )}            </div>
           )}
 
           {notice && !error && (

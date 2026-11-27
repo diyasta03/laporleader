@@ -16,6 +16,7 @@
 var SHEET_BRANCHES = 'Branches';
 var SHEET_USERS = 'Users';
 var SHEET_REPORTS = 'Reports';
+var GOOGLE_CLIENT_ID = '180602020868-jmjqma9tuuclegmo8ga8mrb09vkrhhk1.apps.googleusercontent.com';
 var ADMIN_EMAIL_DOMAIN = '@wmcenter.id';
 var SESSION_TTL_SECONDS = 21600; // 6 jam
 
@@ -208,7 +209,8 @@ function doPost(e) {
         return handleBootstrapAdmin_(payload);
       case 'login':
         return handleLogin_(payload);
-      case 'logout':
+      case 'googleLogin':
+        return handleGoogleLogin_(payload);      case 'logout':
         return handleLogout_(token);
       case 'me':
         return handleMe_(token);
@@ -376,6 +378,88 @@ function handleLogin_(payload) {
     ok: true,
     data: { token: token, user: toUserProfile_(found) },
   });
+}
+
+function handleGoogleLogin_(payload) {
+  var idToken = String((payload && payload.idToken) || '').trim();
+  if (!idToken) {
+    return jsonResponse_({ ok: false, error: 'Token Google tidak ditemukan.' });
+  }
+
+  // 1. Verifikasi id_token langsung ke endpoint Google
+  var res = UrlFetchApp.fetch(
+    'https://oauth2.googleapis.com/tokeninfo?id_token=' + encodeURIComponent(idToken),
+    { muteHttpExceptions: true }
+  );
+
+  if (res.getResponseCode() !== 200) {
+    return jsonResponse_({ ok: false, error: 'Token Google tidak valid atau kedaluwarsa.' });
+  }
+
+  var profile = JSON.parse(res.getContentText());
+
+  // 2. Validasi Client ID (aud) agar token dipastikan berasal dari aplikasi WM Center
+  if (String(profile.aud || '') !== GOOGLE_CLIENT_ID) {
+    return jsonResponse_({ ok: false, error: 'Client ID token Google tidak sesuai.' });
+  }
+
+  var email = normalizeEmail_(profile.email);
+  var isVerified = String(profile.email_verified) === 'true';
+
+  // 3. Validasi wajib domain @wmcenter.id (sesuai fungsi isValidWmAdminEmail_ rekan Anda)
+  if (!isVerified || !isValidWmAdminEmail_(email)) {
+    return jsonResponse_({
+      ok: false,
+      error: 'Akses ditolak. Login Admin wajib menggunakan email ' + ADMIN_EMAIL_DOMAIN + '.',
+    });
+  }
+
+  // 4. Cari atau daftarkan otomatis akun Admin ke sheet Users
+  var lock = LockService.getScriptLock();
+  lock.waitLock(10000);
+  try {
+    var users = readObjects_(SHEET_USERS);
+    var adminUser = null;
+
+    for (var i = 0; i < users.length; i++) {
+      if (users[i].role === 'admin' && normalizeEmail_(getUserIdentifier_(users[i])) === email) {
+        adminUser = users[i];
+        break;
+      }
+    }
+
+    if (!adminUser) {
+      var now = new Date().toISOString();
+      var userId = 'usr-' + Utilities.getUuid().slice(0, 8);
+      var fullName = String(profile.name || email.split('@')[0]).trim();
+      var salt = generateRandomHex_(16);
+      var hash = hashSecret_(generateRandomHex_(32), salt);
+
+      var sheet = getSheetOrThrow_(SHEET_USERS);
+      sheet.appendRow([userId, safeCell_(email), safeCell_(fullName), 'admin', '', salt, hash, now]);
+
+      adminUser = {
+        id: userId,
+        identifier: email,
+        fullName: fullName,
+        role: 'admin',
+        branchId: '',
+        createdAt: now,
+      };
+    }
+
+    // 5. Terbitkan session token 6 jam yang kompatibel dengan semua API CRUD rekan Anda
+    var token = createSession_(adminUser.id);
+    return jsonResponse_({
+      ok: true,
+      data: {
+        token: token,
+        user: toUserProfile_(adminUser),
+      },
+    });
+  } finally {
+    lock.releaseLock();
+  }
 }
 
 function handleLogout_(token) {

@@ -103,6 +103,7 @@ export interface AuthBootstrapStatus {
   backendMode: 'local' | 'appscript';
   appsScriptConfigured: boolean;
   adminEmailDomain: string;
+
 }
 
 export interface AppScriptConfigState {

@@ -80,6 +80,13 @@ export const api = {
     return request('/api/auth/login', { method: 'POST', body: payload });
   },
 
+  googleLogin(idToken: string): Promise<{ token: string; user: UserProfile }> {
+    return request('/api/auth/google', {
+      method: 'POST',
+      body: { idToken },
+    });
+  },
+
   logout(token?: string | null): Promise<{ ok: boolean }> {
     return request('/api/auth/logout', { method: 'POST', token });
   },
